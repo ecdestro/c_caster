@@ -3,12 +3,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Helper function to determine map dimensions without loading it all at once.
+// A portable implementation of strdup, as it's not standard C99
+static char* my_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s) + 1;
+    char* new_s = malloc(len);
+    if (new_s) {
+        memcpy(new_s, s, len);
+    }
+    return new_s;
+}
+
+// Helper function to determine map dimensions.
 static void get_map_dimensions(FILE* file, int* width, int* height) {
     *width = 0;
     *height = 0;
     int current_width = 0;
-    char c;
+    int c; // Use int to correctly handle EOF
 
     while ((c = fgetc(file)) != EOF) {
         if (c == '\n') {
@@ -21,15 +32,12 @@ static void get_map_dimensions(FILE* file, int* width, int* height) {
             current_width++;
         }
     }
-    // Account for the last line if it doesn't end with a newline
     if (current_width > 0) {
         if (current_width > *width) {
             *width = current_width;
         }
         (*height)++;
     }
-
-    // Rewind the file to be read again
     rewind(file);
 }
 
@@ -49,37 +57,37 @@ Map* map_load(const char* filename) {
         return NULL;
     }
 
-    // Allocate the map structure
     Map* map = (Map*)malloc(sizeof(Map));
-    if (!map) {
-        fclose(file);
-        return NULL;
-    }
+    if (!map) { fclose(file); return NULL; }
     map->width = width;
     map->height = height;
 
-    // Allocate the grid rows
     map->grid = (char**)malloc(height * sizeof(char*));
     if (!map->grid) {
         free(map);
         fclose(file);
         return NULL;
     }
+    // Initialize pointers to NULL for safer cleanup in case of allocation failure
+    for (int i = 0; i < height; ++i) map->grid[i] = NULL;
 
-    // Allocate each row and read the file content
-    char* line_buffer = (char*)malloc(width + 2); // +2 for newline and null terminator
+    char* line_buffer = (char*)malloc(width + 2);
+    if (!line_buffer) {
+        map_free(map);
+        fclose(file);
+        return NULL;
+    }
+
     for (int i = 0; i < height; ++i) {
         if (fgets(line_buffer, width + 2, file) == NULL) {
-            // Handle potential read error or premature EOF
-            map_free(map); // Clean up partially allocated map
+            map_free(map);
             free(line_buffer);
             fclose(file);
             return NULL;
         }
-        // Strip newline character if present
         line_buffer[strcspn(line_buffer, "\n")] = 0;
 
-        map->grid[i] = strdup(line_buffer);
+        map->grid[i] = my_strdup(line_buffer); // Use our portable version
         if (!map->grid[i]) {
             map_free(map);
             free(line_buffer);
@@ -94,12 +102,13 @@ Map* map_load(const char* filename) {
 }
 
 void map_free(Map* map) {
-    if (!map) {
-        return;
-    }
+    if (!map) return;
     if (map->grid) {
+        // The height is known, so we can safely iterate
         for (int i = 0; i < map->height; ++i) {
-            free(map->grid[i]);
+            if (map->grid[i]) { // Check if pointer is not NULL before freeing
+                free(map->grid[i]);
+            }
         }
         free(map->grid);
     }
