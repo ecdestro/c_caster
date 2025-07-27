@@ -1,65 +1,100 @@
-#define _USE_MATH_DEFINES // For M_PI, though not always reliable
+#define _USE_MATH_DEFINES
 #include "renderer.h"
 #include <math.h>
 
-// If M_PI is not defined by the compiler, define it ourselves.
-// This is the most portable solution.
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-// Define the 3D projection plane and field of view
 #define RENDER_WIDTH 640
 #define RENDER_HEIGHT 640
-#define FOV (M_PI / 3.0) // 60 degrees field of view
+#define FOV (M_PI / 3.0)
+#define TEXTURE_WIDTH 64
+#define TEXTURE_HEIGHT 64
 
-void render_3d_view(SDL_Renderer* renderer, const Player* player, const Map* map) {
-    // Iterate through every vertical column of the rendering area
+void render_3d_view(SDL_Renderer* renderer, const Player* player, const Map* map, SDL_Texture* wall_texture) {
     for (int x = 0; x < RENDER_WIDTH; ++x) {
-        // --- 1. Calculate Ray Angle ---
         float ray_angle = (player->angle - FOV / 2.0f) + ((float)x / (float)RENDER_WIDTH) * FOV;
+        float ray_dir_x = cos(ray_angle);
+        float ray_dir_y = sin(ray_angle);
 
-        // --- 2. Cast the Ray (DDA Algorithm) ---
-        float distance_to_wall = 0;
-        int hit_wall = 0;
+        int map_x = (int)player->x;
+        int map_y = (int)player->y;
+
+        float side_dist_x, side_dist_y;
         
-        float eye_x = cos(ray_angle);
-        float eye_y = sin(ray_angle);
+        float delta_dist_x = (ray_dir_x == 0) ? 1e30 : fabs(1 / ray_dir_x);
+        float delta_dist_y = (ray_dir_y == 0) ? 1e30 : fabs(1 / ray_dir_y);
+        float perp_wall_dist;
 
-        while (!hit_wall && distance_to_wall < 20.0f) {
-            distance_to_wall += 0.1f;
-            int test_x = (int)(player->x + eye_x * distance_to_wall);
-            int test_y = (int)(player->y + eye_y * distance_to_wall);
+        int step_x, step_y;
+        int hit = 0;
+        int side;
 
-            if (test_x < 0 || test_x >= map->width || test_y < 0 || test_y >= map->height) {
-                hit_wall = 1;
-                distance_to_wall = 20.0f;
-            } else {
-                if (map->grid[test_y][test_x] == 'W') {
-                    hit_wall = 1;
-                }
-            }
+        if (ray_dir_x < 0) {
+            step_x = -1;
+            side_dist_x = (player->x - map_x) * delta_dist_x;
+        } else {
+            step_x = 1;
+            side_dist_x = (map_x + 1.0 - player->x) * delta_dist_x;
+        }
+        if (ray_dir_y < 0) {
+            step_y = -1;
+            side_dist_y = (player->y - map_y) * delta_dist_y;
+        } else {
+            step_y = 1;
+            side_dist_y = (map_y + 1.0 - player->y) * delta_dist_y;
         }
 
-        // --- 3. Correct Fisheye Distortion ---
-        float ca = player->angle - ray_angle;
-        if (ca < 0) ca += 2 * M_PI;
-        if (ca > 2 * M_PI) ca -= 2 * M_PI;
-        distance_to_wall *= cos(ca);
+        while (hit == 0) {
+            if (side_dist_x < side_dist_y) {
+                side_dist_x += delta_dist_x;
+                map_x += step_x;
+                side = 0; // Wall was hit on an X-side (vertical)
+            } else {
+                side_dist_y += delta_dist_y;
+                map_y += step_y;
+                side = 1; // Wall was hit on a Y-side (horizontal)
+            }
+            if (map->grid[map_y][map_x] == 'W') hit = 1;
+        }
 
-        // --- 4. Calculate Wall Slice Height ---
-        int line_height = (int)(RENDER_HEIGHT / distance_to_wall);
+        if (side == 0) {
+            perp_wall_dist = (side_dist_x - delta_dist_x);
+        } else {
+            perp_wall_dist = (side_dist_y - delta_dist_y);
+        }
+
+        int line_height = (int)(RENDER_HEIGHT / perp_wall_dist);
         int draw_start = -line_height / 2 + RENDER_HEIGHT / 2;
         if (draw_start < 0) draw_start = 0;
         int draw_end = line_height / 2 + RENDER_HEIGHT / 2;
         if (draw_end >= RENDER_HEIGHT) draw_end = RENDER_HEIGHT - 1;
 
-        // --- 5. Draw the Slice ---
-        Uint8 shade = 255 - (Uint8)(distance_to_wall * 10);
-        if (shade < 50) shade = 50;
+        // --- Texture Calculation ---
+        double wall_x; // Where exactly the wall was hit
+        if (side == 0) {
+            wall_x = player->y + perp_wall_dist * ray_dir_y;
+        } else {
+            wall_x = player->x + perp_wall_dist * ray_dir_x;
+        }
+        wall_x -= floor(wall_x);
+
+        // X coordinate on the texture
+        int tex_x = (int)(wall_x * (double)TEXTURE_WIDTH);
+        if (side == 0 && ray_dir_x > 0) tex_x = TEXTURE_WIDTH - tex_x - 1;
+        if (side == 1 && ray_dir_y < 0) tex_x = TEXTURE_WIDTH - tex_x - 1;
+
+        // --- Draw the Texture Slice ---
+        SDL_Rect src_rect = { tex_x, 0, 1, TEXTURE_HEIGHT };
+        SDL_Rect dest_rect = { x + RENDER_WIDTH, draw_start, 1, draw_end - draw_start };
         
-        SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
-        int screen_x = x + RENDER_WIDTH;
-        SDL_RenderDrawLine(renderer, screen_x, draw_start, screen_x, draw_end);
+        // Apply shading for distance
+        Uint8 shade = 255 - (Uint8)(perp_wall_dist * 20);
+        if (shade < 60) shade = 60;
+        if (side == 1) shade = (shade * 2) / 3; // Make Y-sides darker
+        SDL_SetTextureColorMod(wall_texture, shade, shade, shade);
+
+        SDL_RenderCopy(renderer, wall_texture, &src_rect, &dest_rect);
     }
 }
