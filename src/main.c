@@ -74,11 +74,18 @@ int main(int argc, char* argv[]) {
     // --- Main Loop ---
     int quit = 0;
     SDL_Event e;
+    const Uint8* keystate = SDL_GetKeyboardState(NULL);
+
     while (!quit) {
+        // Event polling
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) quit = 1;
         }
 
+        // Input handling
+        player_handle_input(player, keystate, map);
+
+        // Rendering
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
