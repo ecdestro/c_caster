@@ -74,13 +74,15 @@ int main(int argc, char* argv[]) {
     // --- Main Loop ---
     int quit = 0;
     SDL_Event e;
-    const Uint8* keystate = SDL_GetKeyboardState(NULL);
 
     while (!quit) {
         // Event polling
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) quit = 1;
         }
+
+        // Get current keyboard state on each frame
+        const Uint8* keystate = SDL_GetKeyboardState(NULL);
 
         // Input handling
         player_handle_input(player, keystate, map);
