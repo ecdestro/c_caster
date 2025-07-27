@@ -3,6 +3,7 @@
 #include <math.h>
 #include "map.h"
 #include "player.h"
+#include "renderer.h"
 
 // Screen dimensions
 #define SCREEN_WIDTH 1280
@@ -49,6 +50,10 @@ void draw_player(SDL_Renderer* renderer, const Player* player) {
     SDL_RenderDrawLine(renderer, start_x, start_y, end_x, end_y);
 }
 
+// Game loop settings
+#define FPS 60
+#define FRAME_DELAY (1000 / FPS)
+
 int main(int argc, char* argv[]) {
     // --- Data Loading ---
     Map* map = map_load("data/level1.map");
@@ -74,8 +79,13 @@ int main(int argc, char* argv[]) {
     // --- Main Loop ---
     int quit = 0;
     SDL_Event e;
+    
+    Uint32 frame_start;
+    int frame_time;
 
     while (!quit) {
+        frame_start = SDL_GetTicks();
+
         // Event polling
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) quit = 1;
@@ -91,10 +101,20 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        // Draw the 2D minimap
         draw_map(renderer, map);
         draw_player(renderer, player);
 
+        // Draw the 3D view
+        render_3d_view(renderer, player, map);
+
         SDL_RenderPresent(renderer);
+
+        // Cap frame rate
+        frame_time = SDL_GetTicks() - frame_start;
+        if (FRAME_DELAY > frame_time) {
+            SDL_Delay(FRAME_DELAY - frame_time);
+        }
     }
 
     // --- Cleanup ---
