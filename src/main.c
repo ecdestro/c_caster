@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
     if (!renderer) { return 1; }
 
     // --- Texture Loading ---
-    SDL_Texture* wall_texture = load_texture(renderer, "data/textures/brick.pgm");
+    SDL_Texture* wall_texture = load_texture(renderer, "data/textures/brick.png");
     if (!wall_texture) {
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
